@@ -19,6 +19,14 @@ import (
 
 var db *sql.DB
 
+func logging(f http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Note: f is the actual handler function we will call inside the logging to log api calls
+		fmt.Printf("Log: [%q] %q", r.Method, r.URL.Path)
+		f(w, r)
+	}
+}
+
 type User struct {
 	ID        int       `json:"id"`
 	Username  string    `json:"username"`
@@ -241,6 +249,17 @@ func removeUser(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func queryParamDemo(w http.ResponseWriter, r *http.Request) {
+	// get the book
+	// navigate to the page
+	vars := mux.Vars(r)
+	fmt.Fprintf(w, "Title %q Page %q", vars["title"], vars["page"])
+}
+
+func echoDemo(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Hello you requested %q", r.URL)
+}
+
 func main() {
 
 	// Configure the database connection (always check errors)
@@ -309,39 +328,32 @@ func main() {
 
 	r := mux.NewRouter()
 
-	r.HandleFunc("/books/{title}/page/{page}", func(w http.ResponseWriter, r *http.Request) {
-		// get the book
-		// navigate to the page
-		vars := mux.Vars(r)
-		fmt.Fprintf(w, "Title %q Page %q", vars["title"], vars["page"])
-	})
+	r.HandleFunc("/books/{title}/page/{page}", logging(queryParamDemo))
 
-	r.HandleFunc("/echo", func(w http.ResponseWriter, req *http.Request) {
-		fmt.Fprintf(w, "Hello you requested %q", req.URL)
-	})
+	r.HandleFunc("/echo", logging(echoDemo))
 
 	// Assert a New User - Create
-	r.HandleFunc("/newUser", insertUser).Methods("POST")
+	r.HandleFunc("/newUser", logging(insertUser)).Methods("POST")
 
 	// Find a User - Read - note it needs the regex
 	// Example: localhost:8090/user/1
-	r.HandleFunc("/user/{id:[0-9]+}", queryUser).Methods("GET")
+	r.HandleFunc("/user/{id:[0-9]+}", logging(queryUser)).Methods("GET")
 
-	// Find a User using params
-	r.HandleFunc("/user", queryUserFromURL).Methods("GET")
+	// Find a User using params - added middleware
+	r.HandleFunc("/user", logging(queryUserFromURL)).Methods("GET")
 
 	// Delete a User using ID
-	r.HandleFunc("/removeUser/{id:[0-9]+}", removeUser).Methods("DELETE")
+	r.HandleFunc("/removeUser/{id:[0-9]+}", logging(removeUser)).Methods("DELETE")
 
 	// Survery Form - we need Get to render the UI, and Post to handle submit
-	r.HandleFunc("/survey", showSurvey).Methods("POST", "GET")
+	r.HandleFunc("/survey", logging(showSurvey)).Methods("POST", "GET")
 
 	// Handling static file
 	fs := http.FileServer(http.Dir("static/"))
 	r.Handle("/static/", http.StripPrefix("/static/", fs))
 
 	// Todo template
-	r.HandleFunc("/todo", todoTemplate).Methods("GET")
+	r.HandleFunc("/todo", logging(todoTemplate)).Methods("GET")
 
 	fmt.Println("The server is listening at port 8090")
 	http.ListenAndServe(":8090", r)
