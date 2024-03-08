@@ -8,6 +8,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/riazmuns/simple-go-webservice/survey"
 	"github.com/riazmuns/simple-go-webservice/todo"
 
 	"database/sql"
@@ -39,6 +40,32 @@ func todoTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tmpl.Execute(w, data)
+}
+
+// handler for survey
+func showSurvey(w http.ResponseWriter, r *http.Request) {
+	tmpl := template.Must(template.ParseFiles("templates/form.html"))
+	// checking if the http request is post method
+	// TODO: maybe its better to tell the user, this endpoint is not supported or bad request
+	if r.Method == http.MethodPost {
+		// Inticate that the form was submitted
+
+		// Populating the values from the form to render the filled values
+		details := survey.ContactDetails{
+			Email:   r.FormValue("email"),
+			Subject: r.FormValue("subject"),
+			Message: r.FormValue("message"),
+		}
+
+		fmt.Println(details)
+
+		// TODO: persist the survey data into a database
+
+		tmpl.Execute(w, struct{ Success bool }{true})
+		return
+	}
+
+	tmpl.Execute(w, struct{ Success bool }{false})
 }
 
 func insertUser(w http.ResponseWriter, r *http.Request) {
@@ -305,6 +332,9 @@ func main() {
 
 	// Delete a User using ID
 	r.HandleFunc("/removeUser/{id:[0-9]+}", removeUser).Methods("DELETE")
+
+	// Survery Form - we need Get to render the UI, and Post to handle submit
+	r.HandleFunc("/survey", showSurvey).Methods("POST", "GET")
 
 	// Handling static file
 	fs := http.FileServer(http.Dir("static/"))
