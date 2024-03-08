@@ -22,7 +22,7 @@ type User struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
-func insertItem(w http.ResponseWriter, r *http.Request) {
+func insertUser(w http.ResponseWriter, r *http.Request) {
 	// Parse the request body into a Item struct
 	var newUser User
 	err := json.NewDecoder(r.Body).Decode(&newUser) // the post body must comply with User struct
@@ -55,6 +55,124 @@ func insertItem(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 
+}
+
+/*
+Search by ID
+*/
+func queryUser(w http.ResponseWriter, r *http.Request) {
+
+	// Get the id parameter from the URL
+	params := mux.Vars(r)
+	userID := params["id"]
+
+	fmt.Println(params)
+
+	var queryUser User
+
+	// making a select query - scan will populate the values from the select query
+	err := db.QueryRow("SELECT id, username FROM users WHERE id=?", userID).Scan(&queryUser.ID, &queryUser.Username)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.NotFound(w, r)
+			return
+		}
+		// handle rest of the errors
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"id": %d, "username": %s}`, queryUser.ID, queryUser.Username)
+
+}
+
+/*
+Query user from URL param
+If ID is passed we will select a single record
+If Multiple record matches, we will return all the matches
+*/
+
+func queryUserFromURL(w http.ResponseWriter, r *http.Request) {
+
+	// Get the id parameter from the URL
+	query := r.URL.Query()
+
+	userID := query.Get("id")
+	username := query.Get("username")
+
+	var queryUser User
+
+	// checking is userID is define to select only one record
+	if userID != "" {
+		// making a select query - scan will populate the values from the select query
+		err := db.QueryRow("SELECT id, username FROM users WHERE id=?", userID).Scan(&queryUser.ID, &queryUser.Username)
+
+		if err != nil {
+			if err == sql.ErrNoRows {
+				http.NotFound(w, r)
+				return
+			}
+			// handle rest of the errors
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"id": %d, "username": %s}`, queryUser.ID, queryUser.Username)
+
+	} else if username != "" {
+
+		rows, err := db.Query("SELECT id, username, password FROM users WHERE username=?", username)
+
+		if err != nil {
+			if err == sql.ErrNoRows {
+				http.NotFound(w, r)
+				return
+			}
+			// handle rest of the errors
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+
+		defer rows.Close()
+
+		var users []User
+		// Populating the matched records from the db
+		for rows.Next() {
+			var u User
+
+			err := rows.Scan(&u.ID, &u.Username, &u.Password)
+
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+
+			users = append(users, u)
+		}
+
+		fmt.Println(users)
+		w.WriteHeader(http.StatusOK)
+
+		// we need to return as a json
+		jsonData, err := json.Marshal(users)
+
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Setting the response header
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(jsonData)
+
+	} else {
+		// this is not a valid request
+		http.Error(w, "Bad Request", http.StatusInternalServerError)
+	}
+
+}
+
+func removeUser(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
 }
 
 func main() {
@@ -136,8 +254,18 @@ func main() {
 		fmt.Fprintf(w, "Hello you requested %q", req.URL)
 	})
 
-	// Define your routes
-	r.HandleFunc("/items", insertItem).Methods("POST")
+	// Assert a New User - Create
+	r.HandleFunc("/newUser", insertUser).Methods("POST")
+
+	// Find a User - Read - note it needs the regex
+	// Example: localhost:8090/user/1
+	r.HandleFunc("/user/{id:[0-9]+}", queryUser).Methods("GET")
+
+	// Find a User using params
+	r.HandleFunc("/user", queryUserFromURL).Methods("GET")
+
+	// Delete a User using ID
+	r.HandleFunc("/removeUser/{id:[0-9]+}", removeUser).Methods("DELETE")
 
 	// Handling static file
 	fs := http.FileServer(http.Dir("static/"))
