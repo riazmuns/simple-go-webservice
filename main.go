@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"database/sql"
 
@@ -11,25 +13,74 @@ import (
 	"github.com/gorilla/mux"
 )
 
+var db *sql.DB
+
+type User struct {
+	ID        int       `json:"id"`
+	Username  string    `json:"username"`
+	Password  string    `json:"password"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func insertItem(w http.ResponseWriter, r *http.Request) {
+	// Parse the request body into a Item struct
+	var newUser User
+	err := json.NewDecoder(r.Body).Decode(&newUser) // the post body must comply with User struct
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Insert the item into the database
+	res, err := db.Exec(
+		"INSERT INTO users (username, password) VALUES (?, ?)",
+		newUser.Username,
+		newUser.Password,
+	)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Get the ID of the inserted item
+	lastInsertID, err := res.LastInsertId()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Return the ID of the inserted item in the response
+	response := map[string]int{"id": int(lastInsertID)}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+
+}
+
 func main() {
 
 	// Configure the database connection (always check errors)
 	// Specify connection properties.
 	cfg := mysql.Config{
-		User:   "root",
-		Passwd: "",
-		Addr:   "127.0.0.1:3306",
-		DBName: "mysql",
+		User:      "root",
+		Passwd:    "",
+		Addr:      "127.0.0.1:3306",
+		DBName:    "mysql",
+		Collation: "utf8mb4_general_ci",
 	}
 
 	// Get a driver-specific connector.
-	connector, err := mysql.NewConnector(&cfg)
-	fmt.Println(connector)
+	conn, err := mysql.NewConnector(&cfg)
+
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	db, err := sql.Open("mysql", "root@(127.0.0.1:3306)/mysql")
+	// Open a connection to the database using the connector
+	db = sql.OpenDB(conn)
+	defer db.Close()
+
+	//db, err := sql.Open("mysql", "root@(127.0.0.1:3306)/mysql") -> this is another way to make the call
 
 	if err != nil {
 		log.Fatal(err)
@@ -39,12 +90,38 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	//db := sql.OpenDB(connector)
 
-	// Confirm a successful connection.
-	// if err := db.Ping(); err != nil {
-	// 	log.Fatal("?")
-	// }
+	// we need to make sure that this code creates a table if it doesn't exist
+	var tableExists bool
+
+	// checking if table exists
+	query := `SHOW TABLES LIKE 'users';`
+	_, err = db.Exec(query)
+
+	if err != nil {
+		log.Fatal(err)
+	} else {
+		tableExists = true
+	}
+
+	// Note: there is a bug here - i.e once the table is created and dropped, it still says table exists
+	fmt.Println(tableExists)
+
+	if !tableExists { // Create a new table if it doesn't exist
+		query := `
+			CREATE TABLE users(
+				id INT AUTO_INCREMENT,
+				username TEXT NOT NULL,
+				password TEXT NOT NULL,
+				created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+				PRIMARY KEY (id)
+
+			);`
+
+		if _, err := db.Exec(query); err != nil {
+			log.Fatal(err)
+		}
+	}
 
 	r := mux.NewRouter()
 
@@ -58,6 +135,9 @@ func main() {
 	r.HandleFunc("/echo", func(w http.ResponseWriter, req *http.Request) {
 		fmt.Fprintf(w, "Hello you requested %q", req.URL)
 	})
+
+	// Define your routes
+	r.HandleFunc("/items", insertItem).Methods("POST")
 
 	// Handling static file
 	fs := http.FileServer(http.Dir("static/"))
