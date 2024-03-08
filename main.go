@@ -172,7 +172,25 @@ func queryUserFromURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func removeUser(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
+	params := mux.Vars(r)
+	userID := params["id"]
+
+	rows, err := db.Exec("DELETE FROM users WHERE  id = ?", userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	cnt, err := rows.RowsAffected()
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	if cnt == 1 {
+		w.WriteHeader(http.StatusOK)
+	} else {
+		http.Error(w, "Critical: ID is not unique", http.StatusInternalServerError)
+	}
 }
 
 func main() {
