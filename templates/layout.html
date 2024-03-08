@@ -1,0 +1,13 @@
+<head>
+    <link href="./css/layout.css" rel="stylesheet"/> <!-- this doesnt seem to work -->
+</head>
+<h3>{{.PageTitle}}</h3>
+<ul>
+    {{range .Todos}}
+        {{if .Done}}
+            <li class="done">{{.Title}}</li>
+        {{else}}
+            <li>{{.Title}}</li>
+        {{end}}
+    {{end}}
+</ul>

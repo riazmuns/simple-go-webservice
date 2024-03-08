@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"text/template"
 	"time"
+
+	"github.com/riazmuns/simple-go-webservice/todo"
 
 	"database/sql"
 
@@ -20,6 +23,22 @@ type User struct {
 	Username  string    `json:"username"`
 	Password  string    `json:"password"`
 	CreatedAt time.Time `json:"createdAt"`
+}
+
+// creating a TODO template
+func todoTemplate(w http.ResponseWriter, r *http.Request) {
+	tmpl := template.Must(template.ParseFiles("templates/layout.html"))
+
+	data := todo.TodoPageData{
+		PageTitle: "My TODO list",
+		Todos: []todo.Todo{
+			{Title: "Task 1", Done: false},
+			{Title: "Task 2", Done: true},
+			{Title: "Task 3", Done: true},
+		},
+	}
+
+	tmpl.Execute(w, data)
 }
 
 func insertUser(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +168,6 @@ func queryUserFromURL(w http.ResponseWriter, r *http.Request) {
 			users = append(users, u)
 		}
 
-		fmt.Println(users)
 		w.WriteHeader(http.StatusOK)
 
 		// we need to return as a json
@@ -187,7 +205,10 @@ func removeUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if cnt == 1 {
-		w.WriteHeader(http.StatusOK)
+		// making delete more verbose so that we have return the ID of what was deleted
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"id": %s, "deleted": True}`, userID)
+
 	} else {
 		http.Error(w, "Critical: ID is not unique", http.StatusInternalServerError)
 	}
@@ -241,7 +262,7 @@ func main() {
 	}
 
 	// Note: there is a bug here - i.e once the table is created and dropped, it still says table exists
-	fmt.Println(tableExists)
+	//fmt.Println(tableExists)
 
 	if !tableExists { // Create a new table if it doesn't exist
 		query := `
@@ -288,6 +309,9 @@ func main() {
 	// Handling static file
 	fs := http.FileServer(http.Dir("static/"))
 	r.Handle("/static/", http.StripPrefix("/static/", fs))
+
+	// Todo template
+	r.HandleFunc("/todo", todoTemplate).Methods("GET")
 
 	fmt.Println("The server is listening at port 8090")
 	http.ListenAndServe(":8090", r)
